@@ -85,6 +85,75 @@ flask --app application generate-token
 
 Opcionalmente se puede indicar el sujeto del token con `--identity`. El token se envía en el encabezado `Authorization: Bearer <token>`.
 
+## Uso de la API
+
+En los ejemplos se asume la aplicación en `http://localhost:5000` y el token en la variable `TOKEN`:
+
+```bash
+TOKEN=$(flask --app application generate-token)
+```
+
+### POST `/blacklists`
+
+Agrega un email a la lista negra global.
+
+| Campo | Tipo | Obligatorio | Descripción |
+|---|---|---|---|
+| `email` | String | Sí | Email a bloquear. Debe tener un formato válido. |
+| `app_uuid` | String | Sí | Identificador (UUID) de la aplicación cliente. |
+| `blocked_reason` | String | No | Motivo del bloqueo, máximo 255 caracteres. |
+
+```bash
+curl -X POST http://localhost:5000/blacklists \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"email": "cliente@example.com", "app_uuid": "6f1c2a3e-8b4d-4f5a-9c7e-1d2b3c4d5e6f", "blocked_reason": "Solicitud del cliente"}'
+```
+
+Respuesta `201 Created`:
+
+```json
+{"message": "Email added to the blacklist", "email": "cliente@example.com"}
+```
+
+| Código | Caso |
+|---|---|
+| `201` | El email se agregó a la lista negra. |
+| `400` | La validación falló; el campo `errors` trae el detalle por campo. |
+| `401` | El token no se envió o es inválido. |
+| `409` | El email ya está en la lista negra. |
+
+Ejemplo de respuesta `400 Bad Request`:
+
+```json
+{"message": "Validation error", "errors": {"app_uuid": ["Not a valid UUID."]}}
+```
+
+### GET `/blacklists/<email>`
+
+Consulta si un email está en la lista negra global y el motivo por el que fue agregado.
+
+```bash
+curl http://localhost:5000/blacklists/cliente@example.com \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Respuesta `200 OK` si el email está en la lista:
+
+```json
+{"is_blacklisted": true, "blocked_reason": "Solicitud del cliente"}
+```
+
+Respuesta `200 OK` si no está:
+
+```json
+{"is_blacklisted": false, "blocked_reason": null}
+```
+
+Responde `401 Unauthorized` si el token no se envió o es inválido.
+
+Los emails se almacenan y consultan sin distinguir mayúsculas de minúsculas.
+
 ## Pruebas
 
 Las pruebas usan una base de datos SQLite en memoria, por lo que no requieren PostgreSQL:

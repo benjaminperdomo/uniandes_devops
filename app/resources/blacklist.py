@@ -38,3 +38,16 @@ class BlacklistResource(Resource):
             return {"message": "Email is already in the blacklist"}, 409
 
         return {"message": "Email added to the blacklist", "email": entry.email}, 201
+
+
+class BlacklistEmailResource(Resource):
+    method_decorators = [jwt_required()]
+
+    def get(self, email):
+        entry = db.session.execute(
+            db.select(BlacklistEntry).filter_by(email=email.strip().lower())
+        ).scalar_one_or_none()
+
+        if entry is None:
+            return {"is_blacklisted": False, "blocked_reason": None}, 200
+        return {"is_blacklisted": True, "blocked_reason": entry.blocked_reason}, 200
