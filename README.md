@@ -46,7 +46,7 @@ cp .env.example .env
 | `JWT_SECRET_KEY` | Sí | Clave con la que se firma y valida el token JWT. Debe tener al menos 32 caracteres. |
 | `DATABASE_URL` | Sí, si no se usan las variables `RDS_*` | URL de conexión a PostgreSQL, por ejemplo `postgresql://usuario:clave@host:5432/base`. |
 | `RDS_HOSTNAME`, `RDS_PORT`, `RDS_DB_NAME`, `RDS_USERNAME`, `RDS_PASSWORD` | Sí, si no se usa `DATABASE_URL` | Datos de conexión que Elastic Beanstalk inyecta cuando la base de datos RDS está asociada al ambiente. Se usan solo si `DATABASE_URL` no está definida. |
-| `APP_VERSION` | No (por defecto `1.0.0`) | Versión que reporta `GET /health`. Sirve para verificar qué versión está desplegada. |
+| `APP_VERSION` | No | Versión que reporta `GET /health`. Si no se define, se lee del archivo `VERSION` incluido en el paquete. En Elastic Beanstalk se recomienda no definirla, para que la versión desplegada sea la del paquete. |
 | `PROXY_FIX_X_FOR` | No (por defecto `2`) | Número de proxies delante de la aplicación usados para obtener la IP real del cliente desde `X-Forwarded-For`. En Elastic Beanstalk con balanceador son 2 (balanceador + nginx). |
 
 Las tablas se crean automáticamente al iniciar la aplicación.
@@ -165,6 +165,6 @@ pytest
 ## Despliegue en Elastic Beanstalk
 
 - Elastic Beanstalk ejecuta el objeto `application` del archivo `application.py` con gunicorn.
-- Configurar `JWT_SECRET_KEY` y `APP_VERSION` como propiedades de entorno del ambiente.
-- Si la base de datos RDS está asociada al ambiente, Elastic Beanstalk inyecta las variables `RDS_*`; si es externa, definir `DATABASE_URL`.
+- Configurar `JWT_SECRET_KEY` como propiedad de entorno del ambiente. La versión que reporta `/health` sale del archivo `VERSION` del paquete.
+- Si la base de datos RDS está asociada al ambiente, Elastic Beanstalk inyecta las variables `RDS_*`; si se creó por separado, definir las variables `RDS_*` manualmente o `DATABASE_URL`.
 - Usar `/health` como ruta del health check.

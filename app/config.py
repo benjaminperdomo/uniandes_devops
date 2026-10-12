@@ -1,6 +1,18 @@
 import os
+from pathlib import Path
 
 from sqlalchemy.engine import URL
+
+VERSION_FILE = Path(__file__).resolve().parent.parent / "VERSION"
+
+
+def read_app_version():
+    """APP_VERSION overrides the VERSION file shipped in the deployment bundle."""
+    if os.getenv("APP_VERSION"):
+        return os.getenv("APP_VERSION")
+    if VERSION_FILE.exists():
+        return VERSION_FILE.read_text().strip()
+    return "unknown"
 
 
 def build_database_uri():
@@ -25,7 +37,7 @@ def build_database_uri():
 
 
 class Config:
-    APP_VERSION = os.getenv("APP_VERSION", "1.0.0")
+    APP_VERSION = read_app_version()
     SQLALCHEMY_DATABASE_URI = None
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ENGINE_OPTIONS = {"pool_pre_ping": True}
