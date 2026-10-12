@@ -1,11 +1,15 @@
 import click
 from flask import Flask
 from flask_jwt_extended import create_access_token
+from sqlalchemy import text
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from app.config import Config, build_database_uri
 from app.extensions import db, jwt, ma
 from app.resources import register_resources
+
+# Arbitrary key shared by every process that creates the tables.
+TABLE_CREATION_LOCK_KEY = 7301202601
 
 
 def create_app(config_class=Config):
@@ -29,9 +33,18 @@ def create_app(config_class=Config):
     with app.app_context():
         from app import models  # noqa: F401  (registers the models before creating tables)
 
-        db.create_all()
+        create_tables()
 
     return app
+
+
+def create_tables():
+    """Create missing tables. On PostgreSQL an advisory lock serializes the gunicorn workers and
+    instances that start at the same time, so they do not race creating the same table."""
+    with db.engine.begin() as connection:
+        if connection.dialect.name == "postgresql":
+            connection.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": TABLE_CREATION_LOCK_KEY})
+        db.metadata.create_all(connection)
 
 
 def register_commands(app):
