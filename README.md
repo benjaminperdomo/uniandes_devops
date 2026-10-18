@@ -162,6 +162,10 @@ Las pruebas usan una base de datos SQLite en memoria, por lo que no requieren Po
 pytest
 ```
 
+## Pruebas con Postman
+
+La carpeta [postman/](postman) contiene la colección (12 escenarios de prueba con su documentación y pruebas automáticas) y el environment para probar la API desplegada. Se importan en Postman, se configura `base_url` con el dominio del ambiente y `token` con el token generado para ese ambiente, y se ejecutan en orden o con el Collection Runner.
+
 ## Despliegue en Elastic Beanstalk
 
 - Elastic Beanstalk ejecuta el objeto `application` del archivo `application.py` con gunicorn.
