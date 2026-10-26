@@ -16,6 +16,7 @@ Está construida con Python, Flask, Flask-SQLAlchemy, Flask-RESTful, Flask-Marsh
 │   ├── models.py           # Modelos de base de datos
 │   └── resources/          # Recursos de Flask-RESTful (endpoints)
 ├── tests/                  # Pruebas con pytest
+├── buildspec.yml           # Build de AWS CodeBuild (pruebas y artefacto)
 ├── docker-compose.yml      # PostgreSQL para desarrollo local
 ├── requirements.txt        # Dependencias de la aplicación
 └── requirements-dev.txt    # Dependencias de desarrollo y pruebas
@@ -160,6 +161,16 @@ Las pruebas usan una base de datos SQLite en memoria, por lo que no requieren Po
 
 ```bash
 pytest
+```
+
+## Integración continua (AWS CodeBuild)
+
+El archivo [buildspec.yml](buildspec.yml) define el build de AWS CodeBuild: instala Python 3.14 (la misma versión de la plataforma de Elastic Beanstalk; requiere la imagen `aws/codebuild/amazonlinux-x86_64-standard:6.0`) y las dependencias de `requirements-dev.txt`, ejecuta las pruebas con `pytest` (publicando el informe `reports/junit.xml` en formato JUnit) y, si pasan, genera el artefacto `.zip` con `application.py`, `requirements.txt`, `VERSION` y la carpeta `app/`. Si alguna prueba falla, el build falla y no se genera el artefacto.
+
+Para reproducir localmente el paso de pruebas del build:
+
+```bash
+pytest --junitxml=reports/junit.xml
 ```
 
 ## Pruebas con Postman
