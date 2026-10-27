@@ -16,7 +16,8 @@ Está construida con Python, Flask, Flask-SQLAlchemy, Flask-RESTful, Flask-Marsh
 │   ├── models.py           # Modelos de base de datos
 │   └── resources/          # Recursos de Flask-RESTful (endpoints)
 ├── tests/                  # Pruebas con pytest
-├── buildspec.yml           # Build de AWS CodeBuild (pruebas y artefacto)
+├── Dockerfile              # Imagen de la aplicación (etapas base, test y runtime)
+├── buildspec.yml           # Build de AWS CodeBuild (pruebas en la imagen y publicación en ECR)
 ├── docker-compose.yml      # PostgreSQL para desarrollo local
 ├── requirements.txt        # Dependencias de la aplicación
 └── requirements-dev.txt    # Dependencias de desarrollo y pruebas
@@ -163,14 +164,21 @@ Las pruebas usan una base de datos SQLite en memoria, por lo que no requieren Po
 pytest
 ```
 
-## Integración continua (AWS CodeBuild)
+## Integración continua (AWS CodeBuild y contenedores)
 
-El archivo [buildspec.yml](buildspec.yml) define el build de AWS CodeBuild: instala Python 3.14 (la misma versión de la plataforma de Elastic Beanstalk; requiere la imagen `aws/codebuild/amazonlinux-x86_64-standard:6.0`) y las dependencias de `requirements-dev.txt`, ejecuta las pruebas con `pytest` (publicando el informe `reports/junit.xml` en formato JUnit) y, si pasan, genera el artefacto `.zip` con `application.py`, `requirements.txt`, `VERSION` y la carpeta `app/`. Si alguna prueba falla, el build falla y no se genera el artefacto.
+Cada commit en `main` dispara un pipeline de AWS CodePipeline que ejecuta AWS CodeBuild con el archivo [buildspec.yml](buildspec.yml):
 
-Para reproducir localmente el paso de pruebas del build:
+1. Construye la etapa `test` del [Dockerfile](Dockerfile) y ejecuta las pruebas dentro del contenedor, publicando el informe `reports/junit.xml` (JUnit).
+2. Si las pruebas pasan, construye la etapa `runtime` (Python 3.14, gunicorn en el puerto 8000, usuario sin privilegios) y publica la imagen en Amazon ECR con la etiqueta del commit y `latest`.
+3. Genera `Dockerrun.aws.json`, el descriptor para la plataforma Docker de Elastic Beanstalk. No hay despliegue automático.
+
+Si alguna prueba falla, el build falla y la imagen no se publica. El proyecto de CodeBuild necesita el modo privilegiado y la variable de entorno `ECR_REPOSITORY_URI`.
+
+Para reproducir localmente el paso de pruebas del build (requiere Docker):
 
 ```bash
-pytest --junitxml=reports/junit.xml
+docker build --target test -t blacklist-service:test .
+docker run --rm -v "$PWD/reports:/app/reports" blacklist-service:test
 ```
 
 ## Pruebas con Postman
