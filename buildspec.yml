@@ -1,0 +1,39 @@
+version: 0.2
+
+env:
+  variables:
+    # Avoid __pycache__ folders ending up in the artifact.
+    PYTHONDONTWRITEBYTECODE: "1"
+
+phases:
+  install:
+    runtime-versions:
+      # Same version as the Elastic Beanstalk platform. Requires an image that offers it
+      # (verified on aws/codebuild/amazonlinux-x86_64-standard:6.0).
+      python: 3.14
+    commands:
+      - python --version
+      - pip install --upgrade pip
+      - pip install -r requirements-dev.txt
+
+  build:
+    commands:
+      # Unit tests run against an in-memory SQLite database: no database engine is needed.
+      - pytest --junitxml=reports/junit.xml
+
+reports:
+  unit-tests:
+    files:
+      - junit.xml
+    base-directory: reports
+    file-format: JUNITXML
+
+artifacts:
+  # Same bundle Elastic Beanstalk expects: application.py and requirements.txt at the root.
+  files:
+    - application.py
+    - requirements.txt
+    - VERSION
+    - app/**/*
+  exclude-paths:
+    - app/**/__pycache__/**/*

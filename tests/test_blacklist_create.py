@@ -31,6 +31,18 @@ def test_create_blacklist_entry(client, app, auth_headers, payload):
         assert entry.created_at is not None
 
 
+def test_create_stores_client_ip_behind_proxies(client, app, auth_headers, payload):
+    # Load balancer + nginx: the real client is the second-to-last X-Forwarded-For hop.
+    headers = {**auth_headers, "X-Forwarded-For": "203.0.113.7, 10.0.0.5"}
+
+    response = client.post("/blacklists", json=payload, headers=headers)
+
+    assert response.status_code == 201
+    with app.app_context():
+        entry = db.session.execute(db.select(BlacklistEntry)).scalar_one()
+        assert entry.request_ip == "203.0.113.7"
+
+
 def test_create_without_blocked_reason(client, auth_headers, payload):
     del payload["blocked_reason"]
 
