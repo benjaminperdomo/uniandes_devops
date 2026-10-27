@@ -1,25 +1,36 @@
 version: 0.2
 
-env:
-  variables:
-    # Avoid __pycache__ folders ending up in the artifact.
-    PYTHONDONTWRITEBYTECODE: "1"
+# Required project setting (CodeBuild environment variable):
+#   ECR_REPOSITORY_URI = <account>.dkr.ecr.<region>.amazonaws.com/<repository>
+# The project needs privileged mode enabled to run Docker.
 
 phases:
-  install:
-    runtime-versions:
-      # Same version as the Elastic Beanstalk platform. Requires an image that offers it
-      # (verified on aws/codebuild/amazonlinux-x86_64-standard:6.0).
-      python: 3.14
+  pre_build:
     commands:
-      - python --version
-      - pip install --upgrade pip
-      - pip install -r requirements-dev.txt
+      - test -n "$ECR_REPOSITORY_URI" || { echo "ECR_REPOSITORY_URI is not set in the CodeBuild project"; exit 1; }
+      - ECR_REGISTRY="${ECR_REPOSITORY_URI%%/*}"
+      - aws ecr get-login-password --region "$AWS_DEFAULT_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+      # Image tag: short commit id (falls back to the build number when there is no commit id).
+      - IMAGE_TAG="$(echo "${CODEBUILD_RESOLVED_SOURCE_VERSION:-build-$CODEBUILD_BUILD_NUMBER}" | cut -c 1-7)"
+      - echo "Image tag $IMAGE_TAG, application version $(cat VERSION)"
 
   build:
     commands:
-      # Unit tests run against an in-memory SQLite database: no database engine is needed.
-      - pytest --junitxml=reports/junit.xml
+      # Unit tests run inside the test stage of the image, against an in-memory SQLite database.
+      - docker build --target test -t blacklist-service:test .
+      - mkdir -p reports
+      - docker run --rm -v "$PWD/reports:/app/reports" blacklist-service:test
+      # Only reached when the tests pass.
+      - docker build --target runtime -t "$ECR_REPOSITORY_URI:$IMAGE_TAG" -t "$ECR_REPOSITORY_URI:latest" .
+
+  post_build:
+    commands:
+      # post_build also runs after a failed build: never publish an image whose tests failed.
+      - test "$CODEBUILD_BUILD_SUCCEEDING" = "1" || { echo "Build failed: the image is not pushed"; exit 1; }
+      - docker push "$ECR_REPOSITORY_URI:$IMAGE_TAG"
+      - docker push "$ECR_REPOSITORY_URI:latest"
+      # Deployment descriptor for the Elastic Beanstalk Docker platform (used by CD, not in this delivery).
+      - printf '{"AWSEBDockerrunVersion":"1","Image":{"Name":"%s","Update":"true"},"Ports":[{"ContainerPort":8000}]}\n' "$ECR_REPOSITORY_URI:$IMAGE_TAG" > Dockerrun.aws.json
 
 reports:
   unit-tests:
@@ -29,11 +40,5 @@ reports:
     file-format: JUNITXML
 
 artifacts:
-  # Same bundle Elastic Beanstalk expects: application.py and requirements.txt at the root.
   files:
-    - application.py
-    - requirements.txt
-    - VERSION
-    - app/**/*
-  exclude-paths:
-    - app/**/__pycache__/**/*
+    - Dockerrun.aws.json
