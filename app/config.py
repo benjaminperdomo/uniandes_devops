@@ -56,3 +56,5 @@ class TestingConfig(Config):
     SQLALCHEMY_ENGINE_OPTIONS = {}
     JWT_SECRET_KEY = "test-secret-key-with-at-least-32-chars"
     APP_VERSION = "test"
+    # Fixed so the tests do not depend on the PROXY_FIX_X_FOR variable of the developer's environment.
+    PROXY_FIX_X_FOR = 2
