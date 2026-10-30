@@ -26,7 +26,7 @@ phases:
   post_build:
     commands:
       # post_build also runs after a failed build: never publish an image whose tests failed.
-      - test "$CODEBUILD_BUILD_SUCCEEDING" = "1" || { echo "Build failed: the image is not pushed"; exit 1; }
+      - test "$CODEBUILD_BUILD_SUCCEEDING" = "1" || { echo "Build failed - the image is not pushed"; exit 1; }
       - docker push "$ECR_REPOSITORY_URI:$IMAGE_TAG"
       - docker push "$ECR_REPOSITORY_URI:latest"
       # Deployment descriptor for the Elastic Beanstalk Docker platform (used by CD, not in this delivery).
