@@ -22,7 +22,7 @@ class BlacklistResource(Resource):
             return {"message": "Validation error", "errors": error.messages}, 400
 
         if db.session.execute(db.select(BlacklistEntry.id).filter_by(email=data["email"])).first():
-            return {"message": "Email already registered"}, 409
+            return {"message": "Email is already in the blacklist"}, 409
 
         entry = BlacklistEntry(
             email=data["email"],
