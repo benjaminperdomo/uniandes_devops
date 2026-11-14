@@ -29,8 +29,8 @@ phases:
       - test "$CODEBUILD_BUILD_SUCCEEDING" = "1" || { echo "Build failed - the image is not pushed"; exit 1; }
       - docker push "$ECR_REPOSITORY_URI:$IMAGE_TAG"
       - docker push "$ECR_REPOSITORY_URI:latest"
-      # Deployment descriptor for the Elastic Beanstalk Docker platform (used by CD, not in this delivery).
-      - printf '{"AWSEBDockerrunVersion":"1","Image":{"Name":"%s","Update":"true"},"Ports":[{"ContainerPort":8000}]}\n' "$ECR_REPOSITORY_URI:$IMAGE_TAG" > Dockerrun.aws.json
+      # Image descriptor for the ECS Blue/Green deploy action: CodePipeline replaces <IMAGE1_NAME> in taskdef.json with this URI.
+      - printf '{"ImageURI":"%s"}\n' "$ECR_REPOSITORY_URI:$IMAGE_TAG" > imageDetail.json
 
 reports:
   unit-tests:
@@ -39,6 +39,9 @@ reports:
     base-directory: reports
     file-format: JUNITXML
 
+# Input of the deploy stage (AWS CodeDeploy, ECS Blue/Green on AWS Fargate).
 artifacts:
   files:
-    - Dockerrun.aws.json
+    - imageDetail.json
+    - taskdef.json
+    - appspec.json
