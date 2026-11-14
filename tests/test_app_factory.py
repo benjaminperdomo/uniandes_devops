@@ -53,7 +53,9 @@ def test_create_tables_takes_an_advisory_lock_on_postgresql(app):
         with patch.object(db.metadata, "create_all") as create_all:
             create_tables()
 
+    connection.execute.assert_called_once()
     lock_call = connection.execute.call_args
+    assert str(lock_call.args[0]) == "SELECT pg_advisory_xact_lock(:key)"
     assert lock_call.args[1] == {"key": TABLE_CREATION_LOCK_KEY}
     create_all.assert_called_once_with(connection)
 

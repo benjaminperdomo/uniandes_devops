@@ -170,7 +170,7 @@ Cada commit en `main` dispara un pipeline de AWS CodePipeline que ejecuta AWS Co
 
 1. Construye la etapa `test` del [Dockerfile](Dockerfile) y ejecuta las pruebas dentro del contenedor, publicando el informe `reports/junit.xml` (JUnit).
 2. Si las pruebas pasan, construye la etapa `runtime` (Python 3.14, gunicorn en el puerto 8000, usuario sin privilegios) y publica la imagen en Amazon ECR con la etiqueta del commit y `latest`.
-3. Genera `Dockerrun.aws.json`, el descriptor para la plataforma Docker de Elastic Beanstalk. No hay despliegue automático.
+3. Genera los artefactos de despliegue: `imageDetail.json` (URI de la imagen publicada), `taskdef.json` y `appspec.json`. El pipeline `blacklist-cd-pipeline` los usa para desplegar automáticamente en Amazon ECS (Blue/Green) sobre AWS Fargate; ver [Entrega continua en AWS Fargate](#entrega-continua-en-aws-fargate-codedeploy-bluegreen).
 
 Si alguna prueba falla, el build falla y la imagen no se publica. El proyecto de CodeBuild necesita el modo privilegiado y la variable de entorno `ECR_REPOSITORY_URI`.
 
