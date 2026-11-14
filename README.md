@@ -2,13 +2,13 @@
 
 API REST para gestionar la lista negra global de emails de la organización. Permite que los sistemas internos agreguen emails a la lista negra y consulten si un email se encuentra en ella.
 
-Está construida con Python, Flask, Flask-SQLAlchemy, Flask-RESTful, Flask-Marshmallow, Flask-JWT-Extended, Werkzeug y PostgreSQL, y está preparada para desplegarse en AWS Elastic Beanstalk con una base de datos en Amazon RDS.
+Está construida con Python, Flask, Flask-SQLAlchemy, Flask-RESTful, Flask-Marshmallow, Flask-JWT-Extended, Werkzeug y PostgreSQL, y se despliega como contenedor en AWS Fargate (Amazon ECS), detrás de un Application Load Balancer, con una base de datos en Amazon RDS.
 
 ## Estructura del proyecto
 
 ```
 .
-├── application.py          # Punto de entrada WSGI (objeto `application` para Elastic Beanstalk)
+├── application.py          # Punto de entrada WSGI (objeto `application` que ejecuta gunicorn)
 ├── app/
 │   ├── __init__.py         # Application factory y comando para generar el token
 │   ├── config.py           # Configuración a partir de variables de entorno
@@ -18,6 +18,8 @@ Está construida con Python, Flask, Flask-SQLAlchemy, Flask-RESTful, Flask-Marsh
 ├── tests/                  # Pruebas con pytest
 ├── Dockerfile              # Imagen de la aplicación (etapas base, test y runtime)
 ├── buildspec.yml           # Build de AWS CodeBuild (pruebas en la imagen y publicación en ECR)
+├── taskdef.json            # Definición de la tarea de Amazon ECS (AWS Fargate)
+├── appspec.json            # Despliegue Blue/Green de AWS CodeDeploy
 ├── docker-compose.yml      # PostgreSQL para desarrollo local
 ├── requirements.txt        # Dependencias de la aplicación
 └── requirements-dev.txt    # Dependencias de desarrollo y pruebas
@@ -25,7 +27,7 @@ Está construida con Python, Flask, Flask-SQLAlchemy, Flask-RESTful, Flask-Marsh
 
 ## Requisitos
 
-- Python 3.12 o superior
+- Python 3.12 o superior (la imagen del contenedor usa Python 3.14)
 - Docker y Docker Compose (para la base de datos local)
 
 ## Instalación
@@ -47,9 +49,9 @@ cp .env.example .env
 |---|---|---|
 | `JWT_SECRET_KEY` | Sí | Clave con la que se firma y valida el token JWT. Debe tener al menos 32 caracteres. |
 | `DATABASE_URL` | Sí, si no se usan las variables `RDS_*` | URL de conexión a PostgreSQL, por ejemplo `postgresql://usuario:clave@host:5432/base`. |
-| `RDS_HOSTNAME`, `RDS_PORT`, `RDS_DB_NAME`, `RDS_USERNAME`, `RDS_PASSWORD` | Sí, si no se usa `DATABASE_URL` | Datos de conexión que Elastic Beanstalk inyecta cuando la base de datos RDS está asociada al ambiente. Se usan solo si `DATABASE_URL` no está definida. |
-| `APP_VERSION` | No | Versión que reporta `GET /health`. Si no se define, se lee del archivo `VERSION` incluido en el paquete. En Elastic Beanstalk se recomienda no definirla, para que la versión desplegada sea la del paquete. |
-| `PROXY_FIX_X_FOR` | No (por defecto `2`) | Número de proxies delante de la aplicación usados para obtener la IP real del cliente desde `X-Forwarded-For`. En Elastic Beanstalk con balanceador son 2 (balanceador + nginx). |
+| `RDS_HOSTNAME`, `RDS_PORT`, `RDS_DB_NAME`, `RDS_USERNAME`, `RDS_PASSWORD` | Sí, si no se usa `DATABASE_URL` | Datos de conexión a Amazon RDS. En AWS Fargate los define [taskdef.json](taskdef.json); `RDS_PASSWORD` se lee de Parameter Store. Se usan solo si `DATABASE_URL` no está definida. La conexión espera como máximo 5 segundos. |
+| `APP_VERSION` | No | Versión que reporta `GET /health`. Si no se define, se lee del archivo `VERSION` incluido en la imagen. En AWS Fargate no se define, para que la versión desplegada sea la de la imagen. |
+| `PROXY_FIX_X_FOR` | No (por defecto `1`) | Número de proxies delante de la aplicación usados para obtener la IP real del cliente desde `X-Forwarded-For`. En AWS Fargate hay un solo proxy: el balanceador de carga. En local, sin proxy, usar `0`. |
 
 Las tablas se crean automáticamente al iniciar la aplicación.
 
@@ -74,7 +76,7 @@ Las tablas se crean automáticamente al iniciar la aplicación.
    ```
 
    ```json
-   {"status": "ok", "version": "1.0.0"}
+   {"status": "ok", "version": "1.1.0"}
    ```
 
 ## Generación del token
@@ -124,6 +126,7 @@ Respuesta `201 Created`:
 | `400` | La validación falló; el campo `errors` trae el detalle por campo. |
 | `401` | El token no se envió o es inválido. |
 | `409` | El email ya está en la lista negra. |
+| `413` | El cuerpo de la petición supera 16 KB. |
 
 Ejemplo de respuesta `400 Bad Request`:
 
@@ -156,6 +159,8 @@ Responde `401 Unauthorized` si el token no se envió o es inválido.
 
 Los emails se almacenan y consultan sin distinguir mayúsculas de minúsculas.
 
+Si ocurre un error inesperado (por ejemplo, la base de datos no responde), cualquier endpoint responde `500` con `{"message": "Internal server error"}` y el detalle queda en el log del contenedor (Amazon CloudWatch Logs, grupo `/ecs/blacklist-task`).
+
 ## Pruebas
 
 Las pruebas usan una base de datos SQLite en memoria, por lo que no requieren PostgreSQL:
@@ -185,13 +190,6 @@ docker run --rm -v "$PWD/reports:/app/reports" blacklist-service:test
 
 La carpeta [postman/](postman) contiene la colección (12 escenarios de prueba con su documentación y pruebas automáticas) y el environment para probar la API desplegada. Se importan en Postman, se configura `base_url` con el dominio del ambiente y `token` con el token generado para ese ambiente, y se ejecutan en orden o con el Collection Runner.
 
-## Despliegue en Elastic Beanstalk
-
-- Elastic Beanstalk ejecuta el objeto `application` del archivo `application.py` con gunicorn.
-- Configurar `JWT_SECRET_KEY` como propiedad de entorno del ambiente. La versión que reporta `/health` sale del archivo `VERSION` del paquete.
-- Si la base de datos RDS está asociada al ambiente, Elastic Beanstalk inyecta las variables `RDS_*`; si se creó por separado, definir las variables `RDS_*` manualmente o `DATABASE_URL`.
-- Usar `/health` como ruta del health check.
-
 ## Entrega continua en AWS Fargate (CodeDeploy Blue/Green)
 
 El pipeline `blacklist-cd-pipeline` de AWS CodePipeline tiene tres etapas: **Source** (GitHub, rama `main`), **Build** (AWS CodeBuild) y **Deploy** (AWS CodeDeploy, Amazon ECS Blue/Green sobre AWS Fargate). La etapa Deploy solo se ejecuta si el Build termina bien, es decir, si las pruebas pasan.
@@ -204,4 +202,6 @@ Archivos que usa el despliegue:
 | [taskdef.json](taskdef.json) | Definición de la tarea de ECS (Fargate): contenedor `blacklist-api`, puerto 8000, variables de entorno y secretos desde AWS Systems Manager Parameter Store. La imagen es el marcador `<IMAGE1_NAME>`, que CodePipeline reemplaza con la URI del `imageDetail.json`. |
 | [appspec.json](appspec.json) | Indica a CodeDeploy qué contenedor y puerto recibe el tráfico del balanceador. El marcador `<TASK_DEFINITION>` lo reemplaza CodePipeline. |
 
-Los secretos (`JWT_SECRET_KEY` y `RDS_PASSWORD`) no están en el repositorio: la tarea los lee de Parameter Store (`/blacklist/JWT_SECRET_KEY` y `/blacklist/RDS_PASSWORD`). Detrás del balanceador de carga hay un solo proxy, por eso `PROXY_FIX_X_FOR` vale `1`.
+Los secretos (`JWT_SECRET_KEY` y `RDS_PASSWORD`) no están en el repositorio: la tarea los lee de Parameter Store (`/blacklist/JWT_SECRET_KEY` y `/blacklist/RDS_PASSWORD`). Detrás del balanceador de carga hay un solo proxy, por eso `PROXY_FIX_X_FOR` vale `1`. El balanceador usa `/health` como ruta del health check.
+
+Las entregas 1 y 2 se desplegaron en AWS Elastic Beanstalk; ese ambiente ya no existe.

@@ -59,6 +59,7 @@ def test_build_database_uri_uses_rds_variables(monkeypatch, clean_database_env):
 
     assert uri.startswith("postgresql+psycopg://admin:")
     assert "@db.example.com:5433/blacklist" in uri
+    assert uri.endswith("?connect_timeout=5")
 
 
 def test_build_database_uri_prefers_database_url_over_rds(monkeypatch, clean_database_env):
