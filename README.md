@@ -191,3 +191,17 @@ La carpeta [postman/](postman) contiene la colección (12 escenarios de prueba c
 - Configurar `JWT_SECRET_KEY` como propiedad de entorno del ambiente. La versión que reporta `/health` sale del archivo `VERSION` del paquete.
 - Si la base de datos RDS está asociada al ambiente, Elastic Beanstalk inyecta las variables `RDS_*`; si se creó por separado, definir las variables `RDS_*` manualmente o `DATABASE_URL`.
 - Usar `/health` como ruta del health check.
+
+## Entrega continua en AWS Fargate (CodeDeploy Blue/Green)
+
+El pipeline `blacklist-cd-pipeline` de AWS CodePipeline tiene tres etapas: **Source** (GitHub, rama `main`), **Build** (AWS CodeBuild) y **Deploy** (AWS CodeDeploy, Amazon ECS Blue/Green sobre AWS Fargate). La etapa Deploy solo se ejecuta si el Build termina bien, es decir, si las pruebas pasan.
+
+Archivos que usa el despliegue:
+
+| Archivo | Para qué sirve |
+|---|---|
+| [buildspec.yml](buildspec.yml) | Ejecuta las pruebas, construye y publica la imagen en Amazon ECR y genera `imageDetail.json` como artefacto de salida. |
+| [taskdef.json](taskdef.json) | Definición de la tarea de ECS (Fargate): contenedor `blacklist-api`, puerto 8000, variables de entorno y secretos desde AWS Systems Manager Parameter Store. La imagen es el marcador `<IMAGE1_NAME>`, que CodePipeline reemplaza con la URI del `imageDetail.json`. |
+| [appspec.json](appspec.json) | Indica a CodeDeploy qué contenedor y puerto recibe el tráfico del balanceador. El marcador `<TASK_DEFINITION>` lo reemplaza CodePipeline. |
+
+Los secretos (`JWT_SECRET_KEY` y `RDS_PASSWORD`) no están en el repositorio: la tarea los lee de Parameter Store (`/blacklist/JWT_SECRET_KEY` y `/blacklist/RDS_PASSWORD`). Detrás del balanceador de carga hay un solo proxy, por eso `PROXY_FIX_X_FOR` vale `1`.
