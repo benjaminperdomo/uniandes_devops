@@ -7,7 +7,7 @@
         "Properties": {
           "TaskDefinition": "<TASK_DEFINITION>",
           "LoadBalancerInfo": {
-            "ContainerName": "blacklist-apix",
+            "ContainerName": "blacklist-api",
             "ContainerPort": 8000
           }
         }
