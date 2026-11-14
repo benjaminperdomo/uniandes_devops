@@ -37,16 +37,24 @@ def test_create_blacklist_entry(client, app, auth_headers, payload):
         assert entry.created_at is not None
 
 
-def test_create_stores_client_ip_behind_proxies(client, app, auth_headers, payload):
-    # Load balancer + nginx: the real client is the second-to-last X-Forwarded-For hop.
-    headers = {**auth_headers, "X-Forwarded-For": "203.0.113.7, 10.0.0.5"}
+def test_create_stores_client_ip_behind_the_load_balancer(client, app, auth_headers, payload):
+    # One trusted proxy (the load balancer): the real client is the last X-Forwarded-For hop.
+    headers = {**auth_headers, "X-Forwarded-For": "203.0.113.7"}
 
     response = client.post("/blacklists", json=payload, headers=headers)
 
     assert response.status_code == 201
-    with app.app_context():
-        entry = db.session.execute(db.select(BlacklistEntry)).scalar_one()
-        assert entry.request_ip == "203.0.113.7"
+    assert stored_entries(app)[0].request_ip == "203.0.113.7"
+
+
+def test_create_ignores_client_ip_spoofed_in_x_forwarded_for(client, app, auth_headers, payload):
+    # The client sends a fake hop; the load balancer appends the address it really saw.
+    headers = {**auth_headers, "X-Forwarded-For": "1.2.3.4, 203.0.113.7"}
+
+    response = client.post("/blacklists", json=payload, headers=headers)
+
+    assert response.status_code == 201
+    assert stored_entries(app)[0].request_ip == "203.0.113.7"
 
 
 def test_create_without_blocked_reason(client, app, auth_headers, payload):
@@ -234,3 +242,12 @@ def test_create_with_non_object_json_returns_400(client, auth_headers):
 
     assert response.status_code == 400
     assert "_schema" in response.get_json()["errors"]
+
+
+def test_create_with_too_large_body_returns_413(client, app, auth_headers, payload):
+    payload["blocked_reason"] = "x" * (20 * 1024)
+
+    response = client.post("/blacklists", json=payload, headers=auth_headers)
+
+    assert response.status_code == 413
+    assert stored_entries(app) == []

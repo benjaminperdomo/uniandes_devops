@@ -11,7 +11,7 @@ phases:
       - ECR_REGISTRY="${ECR_REPOSITORY_URI%%/*}"
       - aws ecr get-login-password --region "$AWS_DEFAULT_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
       # Image tag: short commit id (falls back to the build number when there is no commit id).
-      - IMAGE_TAG="$(echo "${CODEBUILD_RESOLVED_SOURCE_VERSION:-build-$CODEBUILD_BUILD_NUMBER}" | cut -c 1-7)"
+      - if [ -n "$CODEBUILD_RESOLVED_SOURCE_VERSION" ]; then IMAGE_TAG="$(echo "$CODEBUILD_RESOLVED_SOURCE_VERSION" | cut -c 1-7)"; else IMAGE_TAG="build-$CODEBUILD_BUILD_NUMBER"; fi
       - echo "Image tag $IMAGE_TAG, application version $(cat VERSION)"
 
   build:

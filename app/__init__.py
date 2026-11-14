@@ -1,7 +1,8 @@
 import click
-from flask import Flask
+from flask import Flask, request
 from flask_jwt_extended import create_access_token
 from sqlalchemy import text
+from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from app.config import Config, build_database_uri
@@ -28,6 +29,7 @@ def create_app(config_class=Config):
     jwt.init_app(app)
 
     register_resources(app)
+    register_error_handlers(app)
     register_commands(app)
 
     with app.app_context():
@@ -45,6 +47,17 @@ def create_tables():
         if connection.dialect.name == "postgresql":
             connection.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": TABLE_CREATION_LOCK_KEY})
         db.metadata.create_all(connection)
+
+
+def register_error_handlers(app):
+    @app.errorhandler(Exception)
+    def handle_unexpected_error(error):
+        """Unexpected errors (for example, the database is down) answer JSON like the rest of the API
+        and are logged with their traceback; HTTP errors (401, 404, 405, 413...) keep their own response."""
+        if isinstance(error, HTTPException):
+            return error
+        app.logger.exception("Unhandled error in %s %s", request.method, request.path)
+        return {"message": "Internal server error"}, 500
 
 
 def register_commands(app):
