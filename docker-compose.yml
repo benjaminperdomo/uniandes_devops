@@ -16,5 +16,28 @@ services:
       timeout: 5s
       retries: 10
 
+  app:
+    build:
+      context: .
+      target: runtime
+    image: blacklist-service:local
+    container_name: blacklist-app
+    # JWT_SECRET_KEY and NEW_RELIC_LICENSE_KEY come from the local .env file (not versioned).
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://blacklist:blacklist@db:5432/blacklist
+      PROXY_FIX_X_FOR: "0"
+      NEW_RELIC_APP_NAME: blacklist-api-dev
+    ports:
+      - "8000:8000"
+    # Same resources as the AWS Fargate task (taskdef.json: cpu 256 = 0.25 vCPU, memory 512 MB).
+    cpus: 0.25
+    mem_limit: 512m
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   postgres_data:
