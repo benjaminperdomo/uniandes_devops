@@ -25,11 +25,13 @@
         { "name": "RDS_PORT", "value": "5432" },
         { "name": "RDS_DB_NAME", "value": "blacklist" },
         { "name": "RDS_USERNAME", "value": "blacklist_admin" },
-        { "name": "PROXY_FIX_X_FOR", "value": "1" }
+        { "name": "PROXY_FIX_X_FOR", "value": "1" },
+        { "name": "NEW_RELIC_APP_NAME", "value": "blacklist-api-prod" }
       ],
       "secrets": [
         { "name": "RDS_PASSWORD", "valueFrom": "arn:aws:ssm:us-east-2:012639472461:parameter/blacklist/RDS_PASSWORD" },
-        { "name": "JWT_SECRET_KEY", "valueFrom": "arn:aws:ssm:us-east-2:012639472461:parameter/blacklist/JWT_SECRET_KEY" }
+        { "name": "JWT_SECRET_KEY", "valueFrom": "arn:aws:ssm:us-east-2:012639472461:parameter/blacklist/JWT_SECRET_KEY" },
+        { "name": "NEW_RELIC_LICENSE_KEY", "valueFrom": "arn:aws:ssm:us-east-2:012639472461:parameter/blacklist/NEW_RELIC_LICENSE_KEY" }
       ],
       "logConfiguration": {
         "logDriver": "awslogs",

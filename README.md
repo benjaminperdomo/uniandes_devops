@@ -20,7 +20,7 @@ Está construida con Python, Flask, Flask-SQLAlchemy, Flask-RESTful, Flask-Marsh
 ├── buildspec.yml           # Build de AWS CodeBuild (pruebas en la imagen y publicación en ECR)
 ├── taskdef.json            # Definición de la tarea de Amazon ECS (AWS Fargate)
 ├── appspec.json            # Despliegue Blue/Green de AWS CodeDeploy
-├── docker-compose.yml      # PostgreSQL para desarrollo local
+├── docker-compose.yml      # Ambiente local: PostgreSQL y la aplicación con el agente de New Relic
 ├── requirements.txt        # Dependencias de la aplicación
 └── requirements-dev.txt    # Dependencias de desarrollo y pruebas
 ```
@@ -28,7 +28,7 @@ Está construida con Python, Flask, Flask-SQLAlchemy, Flask-RESTful, Flask-Marsh
 ## Requisitos
 
 - Python 3.12 o superior (la imagen del contenedor usa Python 3.14)
-- Docker y Docker Compose (para la base de datos local)
+- Docker y Docker Compose (para el ambiente local con contenedores)
 
 ## Instalación
 
@@ -52,18 +52,52 @@ cp .env.example .env
 | `RDS_HOSTNAME`, `RDS_PORT`, `RDS_DB_NAME`, `RDS_USERNAME`, `RDS_PASSWORD` | Sí, si no se usa `DATABASE_URL` | Datos de conexión a Amazon RDS. En AWS Fargate los define [taskdef.json](taskdef.json); `RDS_PASSWORD` se lee de Parameter Store. Se usan solo si `DATABASE_URL` no está definida. La conexión espera como máximo 5 segundos. |
 | `APP_VERSION` | No | Versión que reporta `GET /health`. Si no se define, se lee del archivo `VERSION` incluido en la imagen. En AWS Fargate no se define, para que la versión desplegada sea la de la imagen. |
 | `PROXY_FIX_X_FOR` | No (por defecto `1`) | Número de proxies delante de la aplicación usados para obtener la IP real del cliente desde `X-Forwarded-For`. En AWS Fargate hay un solo proxy: el balanceador de carga. En local, sin proxy, usar `0`. |
+| `NEW_RELIC_LICENSE_KEY` | No | License key de New Relic (tipo *INGEST - LICENSE*). Sin ella el agente queda inactivo y la aplicación funciona normalmente. En local se toma del archivo `.env`; nunca se versiona. |
+| `NEW_RELIC_APP_NAME` | No | Nombre de la aplicación en New Relic. En local lo define [docker-compose.yml](docker-compose.yml): `blacklist-api-dev`. |
 
 Las tablas se crean automáticamente al iniciar la aplicación.
 
 ## Ejecución local
 
-1. Levantar PostgreSQL:
+### Con contenedores (recomendada)
+
+Levanta PostgreSQL y la aplicación con la misma imagen que se despliega en AWS Fargate (etapa `runtime` del [Dockerfile](Dockerfile): gunicorn con el agente de New Relic) y los mismos recursos de la tarea: 0,25 vCPU y 512 MB.
+
+1. Crear el archivo `.env` a partir de [.env.example](.env.example) y definir `JWT_SECRET_KEY` y, para enviar datos a New Relic, `NEW_RELIC_LICENSE_KEY`.
+
+2. Construir y levantar los servicios:
 
    ```bash
-   docker compose up -d
+   docker compose up -d --build
    ```
 
-2. Ejecutar la aplicación (lee las variables del archivo `.env`):
+3. Verificar el estado del servicio:
+
+   ```bash
+   curl http://localhost:8000/health
+   ```
+
+   ```json
+   {"status": "ok", "version": "1.2.0"}
+   ```
+
+4. Generar el token dentro del contenedor (usa la `JWT_SECRET_KEY` del `.env`):
+
+   ```bash
+   docker compose exec app flask --app application generate-token
+   ```
+
+Para ver los logs de la aplicación y del agente se usa `docker compose logs -f app`, y para detener el ambiente, `docker compose down`.
+
+### Sin contenedor para la aplicación
+
+1. Levantar solo PostgreSQL:
+
+   ```bash
+   docker compose up -d db
+   ```
+
+2. Ejecutar la aplicación con el servidor de desarrollo de Flask (lee las variables del archivo `.env`):
 
    ```bash
    flask --app application run
@@ -75,9 +109,7 @@ Las tablas se crean automáticamente al iniciar la aplicación.
    curl http://localhost:5000/health
    ```
 
-   ```json
-   {"status": "ok", "version": "1.1.0"}
-   ```
+En este modo el agente de New Relic no está activo.
 
 ## Generación del token
 
@@ -205,3 +237,24 @@ Archivos que usa el despliegue:
 Los secretos (`JWT_SECRET_KEY` y `RDS_PASSWORD`) no están en el repositorio: la tarea los lee de Parameter Store (`/blacklist/JWT_SECRET_KEY` y `/blacklist/RDS_PASSWORD`). Detrás del balanceador de carga hay un solo proxy, por eso `PROXY_FIX_X_FOR` vale `1`. El balanceador usa `/health` como ruta del health check.
 
 Las entregas 1 y 2 se desplegaron en AWS Elastic Beanstalk; ese ambiente ya no existe.
+
+## Monitoreo con New Relic
+
+La aplicación se instrumenta con el agente de New Relic para Python (`newrelic` en [requirements.txt](requirements.txt)). La imagen de ejecución arranca gunicorn con `newrelic-admin run-program`, que instrumenta Flask, las peticiones HTTP y las consultas a PostgreSQL sin cambios en el código.
+
+El agente se configura solo con variables de entorno:
+
+| Variable | Dónde se define | Valor |
+|---|---|---|
+| `NEW_RELIC_LICENSE_KEY` | `.env` (local); Parameter Store `/blacklist/NEW_RELIC_LICENSE_KEY` (AWS Fargate, vía [taskdef.json](taskdef.json)) | License key de la cuenta (secreto, no se versiona) |
+| `NEW_RELIC_APP_NAME` | [docker-compose.yml](docker-compose.yml) (local); [taskdef.json](taskdef.json) (AWS Fargate) | `blacklist-api-dev` en local, `blacklist-api-prod` en AWS Fargate |
+| `NEW_RELIC_LOG`, `NEW_RELIC_LOG_LEVEL` | [Dockerfile](Dockerfile) | `stdout`, `info`: el log del agente sale con el de la aplicación |
+| `NEW_RELIC_DISTRIBUTED_TRACING_ENABLED` | [Dockerfile](Dockerfile) | `true` |
+
+Al levantar el ambiente local, el log del agente muestra la conexión con New Relic y, uno o dos minutos después de recibir peticiones, la aplicación `blacklist-api-dev` aparece en **APM & Services**. También se puede verificar con NRQL:
+
+```sql
+SELECT count(*) FROM Transaction WHERE appName = 'blacklist-api-dev' FACET name SINCE 30 minutes ago
+```
+
+En AWS Fargate el pipeline `blacklist-cd-pipeline` despliega la misma imagen; la tarea lee la license key de Parameter Store (el rol `blacklist-ecs-task-execution-role` tiene permiso `ssm:GetParameters` sobre ese parámetro) y reporta como `blacklist-api-prod`.
